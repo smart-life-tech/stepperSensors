@@ -1,176 +1,156 @@
 #include <AccelStepper.h>
 #include <Adafruit_NeoPixel.h>
+#include <OneWire.h>
+#include <DallasTemperature.h>
 #include "pitches.h"
 
-#define STEPPER_PIN_STEP 6  // Step pin for stepper motor
-#define STEPPER_PIN_DIR 5   // Direction pin for stepper motor
-#define SENSOR1_PIN 2       // Sensor 1 input pin
-#define SENSOR2_PIN 3      // Sensor 2 input pin
-#define NEOPIXEL_PIN 13      // Neopixel data pin
-#define BUZZER_PIN 12        // Buzzer pin
+// Pin Definitions
+#define RELAY_PIN 2
+#define STEP_PIN 5
+#define DIR_PIN 6
+#define BUZZER_PIN 7
+#define NEOPIXEL_PIN 8
+#define TEMP_SENS 14
+#define SENSOR1_PIN 3
 
-#define NUMPIXELS 8         // Number of LED
-#define MAX_SPEED 1000      // Maximum speed for the stepper motor
+// Constants
+#define NUM_PIXELS 8
+#define DELAY_INTERVAL 80
 
-// START MELODY ----------------------------------------------------------------
-int start_melody[] = {
-  NOTE_C7, NOTE_E7, NOTE_C8
-};
-int start_noteDurations[] = {
-  12, 14, 8
-};
-// -----------------------------------------------------------------------------
+// NeoPixel Initialization
+Adafruit_NeoPixel strip(NUM_PIXELS, NEOPIXEL_PIN, NEO_GRB + NEO_KHZ800);
 
-// END MELODY ------------------------------------------------------------------
-int stop_melody[] = {
-  NOTE_C6, NOTE_E5, NOTE_C4
-};
-int stop_noteDurations[] = {
-  12, 14, 8
-};
-// -----------------------------------------------------------------------------
+// Melody Definitions
+int start_melody[] = {NOTE_E6, NOTE_E6, NOTE_G6, NOTE_C7};
+int start_noteDurations[] = {2, 12, 12, 4};
 
-Adafruit_NeoPixel strip = Adafruit_NeoPixel(NUMPIXELS, NEOPIXEL_PIN, NEO_GRB + NEO_KHZ800);
-AccelStepper stepper(AccelStepper::DRIVER, STEPPER_PIN_STEP, STEPPER_PIN_DIR);
-bool rotate = false;
+// OneWire and DallasTemperature Initialization
+OneWire oneWire(TEMP_SENS);
+DallasTemperature tempSensor(&oneWire);
+
+bool rotate = true;
+int sensor1State = 1;
+// Motor Variables
+AccelStepper stepper(AccelStepper::FULL4WIRE, STEP_PIN, DIR_PIN);
+void myISR() {
+  // This is the Interrupt Service Routine (ISR)
+  // It will be called when a change is detected on pin 3
+  // Put your code here to respond to the interrupt event
+  if (digitalRead(SENSOR1_PIN)) {
+    sensor1State = 0;
+  } else {
+    sensor1State = 1;
+  }
+  Serial.println("Interrupt detected on pin 3!");
+}
+
+// Function to play startup melody
+void playStartupMelody() {
+  for (int i = 0; i < 4; i++) {
+    int noteDuration = 1000 / start_noteDurations[i];
+    tone(BUZZER_PIN, start_melody[i], noteDuration);
+    delay(noteDuration * 1.3);
+    noTone(BUZZER_PIN);
+  }
+}
+
+void rotateMotor(int steps, bool direction, int speed) {
+  digitalWrite(DIR_PIN, direction);
+
+  for (int i = 0; i < steps; i++) {
+    digitalWrite(STEP_PIN, HIGH);
+    delayMicroseconds(speed);
+    digitalWrite(STEP_PIN, LOW);
+    delayMicroseconds(speed);
+  }
+}
 
 void setup() {
+  Serial.begin(115200);
+  pinMode(RELAY_PIN, OUTPUT);
   pinMode(SENSOR1_PIN, INPUT_PULLUP);
-  pinMode(SENSOR2_PIN, INPUT_PULLUP);
+  pinMode(TEMP_SENS, INPUT);
   pinMode(BUZZER_PIN, OUTPUT);
-
+  // Attach an interrupt to pin 3 (interrupt 1)
+  attachInterrupt(digitalPinToInterrupt(SENSOR1_PIN), myISR, CHANGE);
   strip.begin();
-  strip.setBrightness(10);
+  strip.setBrightness(50);
+  strip.show(); // Initialize the NeoPixel strip to "off" state
+  digitalWrite(RELAY_PIN, LOW); // Fan is initially turned off
 
-  start_tune();
-  pixel_on_green();
+  playStartupMelody();
+
+  //Serial.begin(9600);
+  tempSensor.begin();
+
+  // Set motor speed and acceleration
+  stepper.setMaxSpeed(1000); // Set your desired motor speed
+  stepper.setAcceleration(500); // Set your desired acceleration
 }
+
 
 void loop() {
-  int sensor1State = digitalRead(SENSOR1_PIN);
-  int sensor2State = digitalRead(SENSOR2_PIN);
 
-  if (sensor1State == LOW && sensor2State == LOW) {
+  // int sensor1State = digitalRead(SENSOR1_PIN);
+
+
+  if (sensor1State == LOW) {
+
     if (rotate) {
-      // Both sensors detect part
-      strip.setPixelColor(0, 255, 0, 0);
-      strip.setPixelColor(1, 255, 0, 0);
+
+      // Part detected
+
+      strip.fill(strip.Color(255, 0, 0), 0, 2);
+
+      strip.setPixelColor(6, strip.Color(0, 255, 0)); // Green
+
+      strip.setPixelColor(7, strip.Color(0, 255, 0)); // Green
+
       strip.show();
-      stepper.stop();
-      //delay(1500);
-      //lightOffNeopixels();
+
+      stepper.stop(); // Stop the motor
+
       rotate = false;
+
     }
-  } else {
-    // Sensors don't detect part
-    rotate = true;
-    strip.setPixelColor(0, 0, 255, 0);
-    strip.setPixelColor(1, 0, 255, 0);
+
+  }
+
+  else {
+
+    // No part detected
+
+    strip.fill(strip.Color(0, 255, 0), 0, 2);
+
+    strip.setPixelColor(6, strip.Color(255, 0, 0)); // Red
+
+    strip.setPixelColor(7, strip.Color(255, 0, 0)); // Red
+
     strip.show();
-    rotateMotor(150, 0, 800); // Steps  ;  Direction (0 & 1)  ;  Speed (0-Slow, 1000-Fast)
-    delay(500);
+
+    rotateMotor(100, 1, 250); // Steps  ;  Direction (0 & 1)  ;  Speed (0-Slow, 1000-Fast)
+
+    rotate = true;
+
   }
-}
 
-void rotateMotor(int  steps, bool direction, int speed){
-  digitalWrite(STEPPER_PIN_DIR, direction);
 
-  for (int i=0; i<steps; i++){
-    digitalWrite(STEPPER_PIN_STEP, HIGH);
-    delayMicroseconds(speed);
-    digitalWrite(STEPPER_PIN_STEP, LOW);
-    delayMicroseconds(speed);
+  tempSensor.requestTemperatures();
+
+  float currentTemp = tempSensor.getTempCByIndex(0);
+
+  //Serial.println(currentTemp);
+
+  // Check if the temperature is above 28 degrees Celsius
+
+  if (currentTemp > 25) {
+
+    digitalWrite(RELAY_PIN, HIGH); // Turn on the fan
+
+  } else {
+
+    digitalWrite(RELAY_PIN, LOW); // Turn off the fan
+
   }
+
 }
-
-// -------------  BUZZER PROGRAM  -------------------------------------------------------------------------------------------------
-void start_tune(){
-  // iterate over the notes of the melody:
-  for (int thisNote = 0; thisNote < 3; thisNote++) {
-
-    // to calculate the note duration, take one second divided by the note type.
-    //e.g. quarter note = 1000 / 4, eighth note = 1000/8, etc.
-    int noteDuration = 800 / start_noteDurations[thisNote];
-    tone(BUZZER_PIN, start_melody[thisNote], noteDuration);
-
-    // to distinguish the notes, set a minimum time between them.
-    // the note's duration + 30% seems to work well:
-    int pauseBetweenNotes = noteDuration * 1.30;
-    delay(pauseBetweenNotes);
-    // stop the tone playing:
-    noTone(BUZZER_PIN);
-  }
-}
-
-void stop_tune(){
-  // iterate over the notes of the melody:
-  for (int thisNote = 0; thisNote < 3; thisNote++) {
-    // to calculate the note duration, take one second divided by the note type.
-    //e.g. quarter note = 1000 / 4, eighth note = 1000/8, etc.
-    int noteDuration = 800 / stop_noteDurations[thisNote];
-    tone(BUZZER_PIN, stop_melody[thisNote], noteDuration);
-
-    // to distinguish the notes, set a minimum time between them.
-    // the note's duration + 30% seems to work well:
-    int pauseBetweenNotes = noteDuration * 1.30;
-    delay(pauseBetweenNotes);
-    // stop the tone playing:
-    noTone(BUZZER_PIN);
-  }
-}
-// -------------  END OF PROGRAM  ----------------------------------------------------------------------------------------------
-
-void playSuccessSound() {
-  // Implement sound logic for success
-  tone(BUZZER_PIN, 200, 500);  // Play a 1-second tone
-}
-
-void lightUpNeopixels() {
-  // Implement Neopixel lighting logic
-  // Example:
-  for (int i = 0; i < NUMPIXELS; i++) {
-    strip.setPixelColor(i, strip.Color(255, 0, 0));  // Red color for each Neopixel
-  }
-  strip.show();
-}
-void lightOffNeopixels() {
-  // Implement Neopixel lighting logic
-  // Example:
-  for (int i = 0; i < NUMPIXELS; i++) {
-    strip.setPixelColor(i, strip.Color(0, 0, 0));  // Red color for each Neopixel
-  }
-  strip.show();
-}
-
-// -------------  LED PROGRAM  -------------------------------------------------------------------------------------------------
-void pixel_on_green() {
-    strip.clear();  // set all pixel colors to 'off'. It only takes effect if pixels.show() is called
-
-  // turn pixels to green one by one with delay between each pixel
-  for (int pixel = 0; pixel < NUMPIXELS; pixel++) {           // for each pixel
-    strip.setPixelColor(pixel, strip.Color(0, 255, 0));  // it only takes effect if pixels.show() is called
-    strip.show();                                           // send the updated pixel colors to the NeoPixel hardware.
-
-    delay(100);  // pause between each pixel
-  }
-  delay(1000);
-  // turn off all pixels for two seconds
-  strip.clear();
-  strip.show();  // send the updated pixel colors to the NeoPixel hardware.
-}
-
-void pixel_error_blink() {
-    strip.clear();  // set all pixel colors to 'off'. It only takes effect if pixels.show() is called
-    
-  for (int pixel = 0; pixel < NUMPIXELS; pixel++) {           // for each pixel
-    strip.setPixelColor(pixel, strip.Color(255, 0, 0));  // it only takes effect if pixels.show() is called
-    strip.show();                                           // send the updated pixel colors to the NeoPixel hardware.
-
-    delay(1);  // pause between each pixel
-  }
-  delay(3000);
-  // turn off all pixels for two seconds
-  strip.clear();
-  strip.show();  // send the updated pixel colors to the NeoPixel hardware.
-}
-// -------------  END OF PROGRAM  ------------------------------------------------------------------------------------------------
