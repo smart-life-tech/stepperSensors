@@ -3,7 +3,7 @@
 #include <OneWire.h>
 #include <DallasTemperature.h>
 #include "pitches.h"
-
+const int threshold = 512;
 // Pin Definitions
 #define RELAY_PIN 2
 #define STEP_PIN 5
@@ -11,7 +11,7 @@
 #define BUZZER_PIN 7
 #define NEOPIXEL_PIN 8
 #define TEMP_SENS 14
-#define SENSOR1_PIN 3
+#define SENSOR1_PIN A0
 
 // Constants
 #define NUM_PIXELS 8
@@ -33,6 +33,7 @@ int sensor1State = 1;
 // Motor Variables
 AccelStepper stepper(AccelStepper::FULL4WIRE, STEP_PIN, DIR_PIN);
 void myISR() {
+  Serial.println("Interrupt detected on pin 3!");
   // This is the Interrupt Service Routine (ISR)
   // It will be called when a change is detected on pin 3
   // Put your code here to respond to the interrupt event
@@ -67,12 +68,12 @@ void rotateMotor(int steps, bool direction, int speed) {
 
 void setup() {
   Serial.begin(115200);
+  Serial.println("Interrupt !");
   pinMode(RELAY_PIN, OUTPUT);
   pinMode(SENSOR1_PIN, INPUT_PULLUP);
   pinMode(TEMP_SENS, INPUT);
   pinMode(BUZZER_PIN, OUTPUT);
-  // Attach an interrupt to pin 3 (interrupt 1)
-  attachInterrupt(digitalPinToInterrupt(SENSOR1_PIN), myISR, CHANGE);
+
   strip.begin();
   strip.setBrightness(50);
   strip.show(); // Initialize the NeoPixel strip to "off" state
@@ -91,10 +92,9 @@ void setup() {
 
 void loop() {
 
-  // int sensor1State = digitalRead(SENSOR1_PIN);
+  int sensor1State = analogRead(SENSOR1_PIN);
 
-
-  if (sensor1State == LOW) {
+  if (sensor1State > threshold) {
 
     if (rotate) {
 
